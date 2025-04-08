@@ -172,7 +172,8 @@ def get_moreDA_inv_augmentation(dataloader_train, dataloader_val, patch_size, pa
     # import IPython;IPython.embed()
 
     val_transforms = []
-    val_transforms.append(InversionRecoverySynthesis(p_inversion=0.8))
+    val_transforms.append(InvGREAugMixedTransform(inv_trans, gre_trans, p_transform=0.3,
+                                          p_inv=inv_gre_ratio))
     val_transforms.append(RemoveLabelTransform(-1, 0))
     if params.get("selected_data_channels") is not None:
         val_transforms.append(DataChannelSelectionTransform(params.get("selected_data_channels")))

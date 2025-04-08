@@ -69,7 +69,7 @@ class nnUNetTrainerV2_InvGreAug(nnUNetTrainer):
             if force_load_plans or (self.plans is None):
                 self.load_plans_file()
 
-            self.processself.process_plans(self.plans)
+            self.process_plans(self.plans)
             self.num_input_channels = 1
 
             self.setup_DA_params()
