@@ -3,6 +3,10 @@ import numpy as np
 from batchgenerators.transforms.abstract_transforms import AbstractTransform
 
 
+def generate_uniform_from_range(lb, ub, size=None):
+    return np.random.random(size=size) * (ub - lb) + lb
+
+
 def bSSFP_readout(M0, T1, T2, FA=35):
     """
     bSSFP imaging
@@ -106,7 +110,7 @@ def blood_flow_decay(ssfp, seg, decay_duration: float = 3.):
 
 
 def triple_inversion_recovery_black_blood(ssfp, seg, M0, T1, T2,
-                                          heuristic=True, STIR=False,
+                                          heuristic_decay=None, STIR=False,
                                           TIb=0.7, TIf=0.7, T1fat=600, T2fat=150):
     """
     Triple inversion recovery for black-blood imaging with fat suppression.
@@ -116,7 +120,7 @@ def triple_inversion_recovery_black_blood(ssfp, seg, M0, T1, T2,
     :param M0: Initial PD.
     :param T1: T1 map.
     :param T2: T2 map.
-    :param heuristic: Use heuristic or real double inversion.
+    :param heuristic_decay: Heuristic decay map.
     :param STIR: Fat suppression option.
     :param TIb: Inversion time in Blood T1 unit, default is 0.7 (approx. ln(2)).
     :param TIf: Inversion time in Fat T1 unit, default is 0.7 (approx. ln(2)).
@@ -124,9 +128,9 @@ def triple_inversion_recovery_black_blood(ssfp, seg, M0, T1, T2,
     :param T2fat: Fat T2 threshold for fat segmentation.
     :return: BB-prepared M0.
     """
-    if heuristic:
-        M0_decay = blood_flow_decay(ssfp, seg)
-        M_prepared = M0 * M0_decay
+    T1 = np.clip(T1, 1., None)
+    if heuristic_decay is not None:
+        M_prepared = M0 * heuristic_decay
     else:
         _, _, blood = extract_blood_map(ssfp, seg)
         T1blood = np.median(T1[blood > 0.5])
@@ -138,8 +142,9 @@ def triple_inversion_recovery_black_blood(ssfp, seg, M0, T1, T2,
     if STIR:
         # perform a third IR for fat suppression
         fat = (T1 < T1fat) & (T2 > T2fat)
-        T1fat = np.median(T1[fat])
-        M_prepared = np.abs(M_prepared * (1 - 2 * np.exp(-TIf * T1fat / T1)))
+        if fat.sum() > 0:
+            T1fat = np.median(T1[fat])
+            M_prepared = np.abs(M_prepared * (1 - 2 * np.exp(-TIf * T1fat / T1)))
 
     return M_prepared
 
@@ -171,3 +176,121 @@ def saturation_recovery(M0, T1, TI: float = 100):
     """
     SR = M0 * (1. - np.exp(-TI / T1))
     return SR
+
+
+def inversion_recovery(M0, T1, TI: float = 100):
+    """
+    Inversion recovery preparation.
+
+    :param M0: Magnetization before SR.
+    :param T1: T1 map.
+    :param TI: Inversion time.
+    :return: SR: Magnetization after SR.
+    """
+    IR = M0 * (1. - 2 * np.exp(-TI / T1))
+    return np.abs(IR)
+
+
+class SplitDataKeyTransform(AbstractTransform):
+
+    def __init__(self, data_key="data"):
+        """
+        Data is 4-Channel, (SSFP, M0, T1, T2)
+
+        :param data_key:
+        """
+        self.data_key = data_key
+
+    def __call__(self, **data_dict):
+        # data = data_dict[self.data_key]
+        ssfp = data_dict[self.data_key][:, [0]]
+        phys = data_dict[self.data_key][:, 1:]
+        data_dict[self.data_key] = ssfp
+        data_dict["phys"] = phys
+        return data_dict
+
+
+class BlackBloodImagingAugmentation(AbstractTransform):
+    def __init__(self, data_key='data',
+                 p: float = 1.0,
+                 phys_key='phys',
+                 readouts=("se", "bssfp", "gre")):
+        """
+        Black blood imaging simulation. There are three types:
+            - Direct decay of bSSFP image
+            - Double inversion preparation
+            - Triple inversion preparation.
+        Note that all augmentation parameters are fixed and not configurable.
+
+        :param data_key:
+        :param phys_key:
+        :param readouts:
+        """
+        self.data_key = data_key
+        self.phys_key = phys_key
+        self.p = p
+        self.readouts = readouts
+
+    def __call__(self, **data_dict):
+        ssfp = data_dict[self.data_key]
+        seg = data_dict.get("seg", None)
+        phys = data_dict[self.phys_key]
+
+        for ind in range(ssfp.shape[0]):
+            p = generate_uniform_from_range(0., 1.)
+            if p > self.p:
+                continue
+            ssfp_ind = ssfp[ind, 0]
+            ssfp_ind = ssfp_ind - ssfp_ind.min()
+            seg_ind = seg[ind, 0]
+            if seg_ind.max() < 1:
+                continue
+            phys_ind = phys[ind, :]
+            M0, T1, T2 = tuple(phys_ind[c] for c in range(3))
+
+            # get decay map
+            Tdecay = generate_uniform_from_range(1., 12.)
+            decay = blood_flow_decay(ssfp_ind, seg_ind, decay_duration=Tdecay)
+
+            # 1. preparation
+            prep = np.random.choice(('direct', 'dir', 'tir'))
+            if prep == 'direct':
+                M0 = ssfp_ind * decay
+            elif prep == 'dir':
+                M0 = triple_inversion_recovery_black_blood(ssfp_ind, seg_ind,
+                                                           M0, T1, T2, heuristic_decay=decay)
+            else:
+                TIf = generate_uniform_from_range(0.5, 0.8)
+                M0 = triple_inversion_recovery_black_blood(ssfp_ind, seg_ind,
+                                                           M0, T1, T2, heuristic_decay=decay,
+                                                           STIR=True,
+                                                           TIf=TIf)
+            # 2. readout
+            if not prep == 'direct':
+                readout = np.random.choice(('bssfp', 'gre', 'tse'))
+                if readout == 'bssfp':
+                    fa = generate_uniform_from_range(8, 45)
+                    gen_image = bSSFP_readout(M0, T1, T2, FA=fa)
+                elif readout == 'gre':
+                    fa = generate_uniform_from_range(8, 45)
+                    TR = generate_uniform_from_range(20, 200)
+                    TE = generate_uniform_from_range(0, 10)
+                    gen_image = gradient_echo_readout(M0, T1, T2, fa, TR, TE)
+                else:
+                    TR = 2000
+                    TE = generate_uniform_from_range(0, 50)
+                    gen_image = spin_echo_readout(M0, T1, T2, TR, TE)
+            else:
+                gen_image = M0
+
+            # renormalize
+            gen_image_valid = gen_image[seg_ind > -1]
+            stats_mu, stats_sig = np.mean(gen_image_valid), np.std(gen_image_valid)
+            gen_image = (gen_image - stats_mu) / stats_sig
+            gen_image[seg_ind < 0] = 0
+
+            # replace original image
+            ssfp[ind, 0] = gen_image
+
+        data_dict["data"] = ssfp
+        return data_dict
