@@ -188,7 +188,34 @@ def inversion_recovery(M0, T1, TI: float = 100):
     :return: SR: Magnetization after SR.
     """
     IR = M0 * (1. - 2 * np.exp(-TI / T1))
-    return np.abs(IR)
+    return IR
+
+
+def molli_signal_simu(M0, T1, T2, fa, Tinv, magnitude=True):
+    """
+    MOLLI signal equation.
+
+    :param M0:  Init magnetization.
+    :param T1:  T1 map.
+    :param T2:  T2 map.
+    :param fa:  flip angle in degrees.
+    :param Tinv: Inversion time.
+    :param magnitude: If magnitude image should be returned (phase insensitive).
+    :return:
+    """
+    fa = np.deg2rad(fa)
+    T1 = np.clip(T1, 1, None)
+    T2 = np.clip(T2, 1, None)
+    cos_fa = np.cos(fa)
+    ratio = T1 / T2
+    steady_state = M0 / (1 + cos_fa + (1 - cos_fa) * ratio)
+    inv_factor = 1 + np.sin(fa * 0.5) / np.sin(fa) * (ratio * (1 - np.cos(fa)) + 1 + np.cos(fa))
+    t1app_inv = 1 / T1 * np.cos(fa * 0.5) ** 2 + 1 / T2 * np.sin(fa * 0.5) ** 2
+    t1app = 1 / t1app_inv
+    signal = steady_state * (1 - inv_factor * np.exp(-Tinv / t1app))
+    if magnitude:
+        signal = np.abs(signal)
+    return signal
 
 
 class SplitDataKeyTransform(AbstractTransform):
@@ -294,3 +321,77 @@ class BlackBloodImagingAugmentation(AbstractTransform):
 
         data_dict["data"] = ssfp
         return data_dict
+
+
+class PerfusionImagingAugmentation(AbstractTransform):
+    def __init__(self, data_key='data',
+                 p: float = 0.7,
+                 phys_key='phys',
+                 readouts=("se", "bssfp", "gre")):
+        """
+        Perfusion-oriented augmentation.
+            - MOLLI for low contrast simulation.
+            - Gd. SR + GRE/bSSFP
+
+        :param data_key:
+        :param phys_key:
+        :param readouts:
+        """
+        self.data_key = data_key
+        self.phys_key = phys_key
+        self.p = p
+        self.readouts = readouts
+
+    def __call__(self, **data_dict):
+        ssfp = data_dict[self.data_key]
+        seg = data_dict.get("seg", None)
+        phys = data_dict[self.phys_key]
+
+        for ind in range(ssfp.shape[0]):
+            p = generate_uniform_from_range(0., 1.)
+            if p > self.p:
+                continue
+            ssfp_ind = ssfp[ind, 0]
+            ssfp_ind = ssfp_ind - ssfp_ind.min()
+            seg_ind = seg[ind, 0]
+            phys_ind = phys[ind, :]
+            M0, T1, T2 = tuple(phys_ind[c] for c in range(3))
+
+            perfusion_enhance = generate_uniform_from_range(0., 1.) < 0.5
+            if perfusion_enhance and (seg_ind.max() > 1):
+                # get T1 after Gd. perfusion.
+                lv_factor = generate_uniform_from_range(0.05, 2.0)
+                rv_factor = generate_uniform_from_range(0.05, 2.0)
+                TI = generate_uniform_from_range(20, 200)
+                left_ventricle_blood, right_ventricle_blood, blood = extract_blood_map(ssfp_ind, seg_ind)
+                T1new = gadolinium_flow(T1, left_ventricle_blood, concentration_factor=lv_factor, r1=4.5)
+                T1new = gadolinium_flow(T1new, right_ventricle_blood, concentration_factor=rv_factor, r1=4.5)
+                M0 = saturation_recovery(M0, T1new, TI=TI)
+                T1 = T1new
+
+            readout = np.random.choice(("molli", "gre", "bssfp"))
+            if readout == 'molli':
+                Ti = generate_uniform_from_range(180, np.percentile(T1, 99) * 1.2)
+                fa = generate_uniform_from_range(8, 35)
+                gen_image = molli_signal_simu(M0, T1, T2, fa, Ti, magnitude=True)
+            elif readout == 'gre':
+                TR = generate_uniform_from_range(10, 300)
+                TE = generate_uniform_from_range(5, 20)
+                FA = generate_uniform_from_range(8, 35)
+                gen_image = gradient_echo_readout(M0, T1, T2, FA, TR, TE)
+            else:
+                FA = generate_uniform_from_range(20, 50)
+                gen_image = bSSFP_readout(M0, T1, T2, FA)
+
+            # renormalize
+            gen_image_valid = gen_image[seg_ind > -1]
+            stats_mu, stats_sig = np.mean(gen_image_valid), np.std(gen_image_valid)
+            gen_image = (gen_image - stats_mu) / stats_sig
+            gen_image[seg_ind < 0] = 0
+
+            # replace original image
+            ssfp[ind, 0] = gen_image
+
+        data_dict["data"] = ssfp
+        return data_dict
+
