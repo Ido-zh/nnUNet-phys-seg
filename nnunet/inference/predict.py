@@ -14,6 +14,7 @@
 
 
 import argparse
+import os
 from copy import deepcopy
 from typing import Tuple, Union, List
 
@@ -284,6 +285,7 @@ def predict_cases(model, list_of_lists, output_filenames, folds, save_npz, num_t
         pp_file = join(model, "postprocessing.json")
         if isfile(pp_file):
             print("postprocessing...")
+            os.chmod(pp_file, 0o777)
             shutil.copy(pp_file, os.path.abspath(os.path.dirname(output_filenames[0])))
             # for_which_classes stores for which of the classes everything but the largest connected component needs to be
             # removed
@@ -637,6 +639,8 @@ def predict_from_folder(model: str, input_folder: str, output_folder: str, folds
     :return:
     """
     maybe_mkdir_p(output_folder)
+
+    os.chmod(join(model, 'plans.pkl'), 0o777)
     shutil.copy(join(model, 'plans.pkl'), output_folder)
 
     assert isfile(join(model, "plans.pkl")), "Folder with saved model weights must contain a plans.pkl file"
