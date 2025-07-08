@@ -9,8 +9,8 @@ def generate_uniform_from_range(lb, ub, size=None):
 class GRESynthesis(AbstractTransform):
     """Synthesize gradient recalled echo images"""
 
-    def __init__(self, p_gre=1.0, fa_range=(6, 25),
-                 tr_range=(20, 100),
+    def __init__(self, p_gre=1.0, fa_range=(3, 15),
+                 tr_range=(15, 100),
                  te_tr_ratio=(0.1, 0.8),
                  data_key="data"):
         self.data_key = data_key
@@ -78,9 +78,9 @@ class InversionRecoverySynthesis(AbstractTransform):
         seg = data_dict.get("seg", None)
         if np.random.random() < self.p_inversion:
             rho, T1, T2 = tuple(data_dict[self.data_key][:, [c]] for c in (1, 2, 3))
-            Ti = generate_uniform_from_range(180, np.percentile(T1, 99) * 1.2,
+            Ti = generate_uniform_from_range(180, np.percentile(T1, 99) * 1.5,
                                              size=(rho.shape[0], 1, 1, 1))
-            fa = generate_uniform_from_range(8, 15,
+            fa = generate_uniform_from_range(4, 15,
                                              size=(rho.shape[0], 1, 1, 1))
             molli = self._inversion_recovery(rho, T1, T2, fa, Ti)
             if seg is not None:

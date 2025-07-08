@@ -109,6 +109,7 @@ def blood_flow_decay(ssfp, seg, decay_duration: float = 3.):
     return decay
 
 
+
 def triple_inversion_recovery_black_blood(ssfp, seg, M0, T1, T2,
                                           heuristic_decay=None, STIR=False,
                                           TIb=0.7, TIf=0.7, T1fat=600, T2fat=150):
