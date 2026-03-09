@@ -396,3 +396,51 @@ class PerfusionImagingAugmentation(AbstractTransform):
         data_dict["data"] = ssfp
         return data_dict
 
+
+
+class T2prep_transform(AbstractTransform):
+    def __init__(self, data_key='data',
+                 p: float = 0.7,
+                 phys_key='phys',
+                 readouts=("se", "bssfp", "gre")):
+        """
+        T2prep mapping
+
+        :param data_key:
+        :param phys_key:
+        :param readouts:
+        """
+        self.data_key = data_key
+        self.phys_key = phys_key
+        self.p = p
+        self.readouts = readouts
+
+    def __call__(self, **data_dict):
+        ssfp = data_dict[self.data_key]
+        seg = data_dict.get("seg", None)
+        phys = data_dict[self.phys_key]
+
+        for ind in range(ssfp.shape[0]):
+            p = generate_uniform_from_range(0., 1.)
+            if p > self.p:
+                continue
+            ssfp_ind = ssfp[ind, 0]
+            ssfp_ind = ssfp_ind - ssfp_ind.min()
+            seg_ind = seg[ind, 0]
+            phys_ind = phys[ind, :]
+            M0, _, T2 = tuple(phys_ind[c] for c in range(3))
+
+            TE = generate_uniform_from_range(5, np.percentile(T2, 99)*0.5)
+            gen_image = M0 *  np.exp(-TE/(1+T2))
+
+            # renormalize
+            gen_image_valid = gen_image[seg_ind > -1]
+            stats_mu, stats_sig = np.mean(gen_image_valid), np.std(gen_image_valid)
+            gen_image = (gen_image - stats_mu) / stats_sig
+            gen_image[seg_ind < 0] = 0
+
+            # replace original image
+            ssfp[ind, 0] = gen_image
+
+        data_dict["data"] = ssfp
+        return data_dict
