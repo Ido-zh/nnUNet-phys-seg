@@ -168,7 +168,7 @@ def get_moreDA_t2prep_augmentation(dataloader_train, dataloader_val, patch_size,
     # batchgenerator_train = SingleThreadedAugmenter(dataloader_train, tr_transforms)
     # import IPython;IPython.embed()
 
-    val_transforms = [split_key_trans, bb_trans, RemoveLabelTransform(-1, 0)]
+    val_transforms = [split_key_trans, t2prep_trans, RemoveLabelTransform(-1, 0)]
     if params.get("selected_data_channels") is not None:
         val_transforms.append(DataChannelSelectionTransform(params.get("selected_data_channels")))
     if params.get("selected_seg_channels") is not None:
