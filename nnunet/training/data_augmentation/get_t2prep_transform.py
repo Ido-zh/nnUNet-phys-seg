@@ -32,7 +32,7 @@ from nnunet.training.data_augmentation.pyramid_augmentations import MoveSegAsOne
     ApplyRandomBinaryOperatorTransform, \
     RemoveRandomConnectedComponentFromOneHotEncodingTransform
 from nnunet.training.data_augmentation.virtual_mri import SplitDataKeyTransform, T2prep_transform
-from nnunet.training.data_augmentation.physical_augmentation import T2prep_transform
+# from nnunet.training.data_augmentation.physical_augmentation import T2prep_transform
 try:
     from batchgenerators.dataloading.nondet_multi_threaded_augmenter import NonDetMultiThreadedAugmenter
 except ImportError as ie:
