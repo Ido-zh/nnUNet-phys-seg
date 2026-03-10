@@ -71,7 +71,7 @@ class nnUNetTrainerV2_InvGreAug(nnUNetTrainer):
 
             self.process_plans(self.plans)
             self.num_input_channels = 1
-
+            
             self.setup_DA_params()
 
             ################# Here we wrap the loss for deep supervision ############
