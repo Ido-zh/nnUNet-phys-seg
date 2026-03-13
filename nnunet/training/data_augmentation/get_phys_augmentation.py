@@ -90,7 +90,7 @@ def get_moreDA_inv_augmentation(dataloader_train, dataloader_val, patch_size, pa
     tr_transforms.append(GaussianNoiseTransform(noise_variance=(0, 1), p_per_sample=0.5))
     tr_transforms.append(GaussianBlurTransform((0.5, 4.), different_sigma_per_channel=True, p_per_sample=0.3,
                                                p_per_channel=0.5))
-    tr_transforms.append(BrightnessMultiplicativeTransform(multiplier_range=(0.25, 1.5), p_per_sample=0.3))
+    tr_transforms.append(BrightnessMultiplicativeTransform(multiplier_range=(0.1, 2), p_per_sample=0.3))
 
     if params.get("do_additive_brightness"):
         tr_transforms.append(BrightnessTransform(params.get("additive_brightness_mu"),
@@ -104,13 +104,12 @@ def get_moreDA_inv_augmentation(dataloader_train, dataloader_val, patch_size, pa
                                                         order_downsample=0, order_upsample=3, p_per_sample=0.25,
                                                         ignore_axes=ignore_axes))
     tr_transforms.append(
-        GammaTransform(params.get("gamma_range"), True, True, retain_stats=params.get("gamma_retain_stats"),
-                       p_per_sample=0.1))  # inverted gamma
+        GammaTransform((0.3, 2.5), True, True, retain_stats=params.get("gamma_retain_stats"),
+                       p_per_sample=0.3))  # inverted gamma
 
-    if params.get("do_gamma"):
-        tr_transforms.append(
-            GammaTransform(params.get("gamma_range"), False, True, retain_stats=params.get("gamma_retain_stats"),
-                           p_per_sample=params["p_gamma"]))
+    tr_transforms.append(
+        GammaTransform((0.3, 2.5), False, True, retain_stats=params.get("gamma_retain_stats"),
+                        p_per_sample=0.3))
 
     if params.get("do_mirror") or params.get("mirror"):
         tr_transforms.append(MirrorTransform(params.get("mirror_axes")))
