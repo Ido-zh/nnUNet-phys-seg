@@ -7,7 +7,7 @@ from nnunet.training.data_augmentation.ginipa.gin import GINGroupConv
 from nnunet.training.data_augmentation.ginipa.advbias import AdvBias, rescale_intensity
 
 
-class nnUNetTrainerV2_InvGreRC(nnUNetTrainerV2_InvGreAug):
+class nnUNetTrainerV2_InvGreBF(nnUNetTrainerV2_InvGreAug):
     def __init__(self, plans_file, fold, output_folder=None, dataset_directory=None, batch_dice=True, stage=None, unpack_data=True, deterministic=True, fp16=False):
         super().__init__(plans_file, fold, output_folder, dataset_directory, batch_dice, stage, unpack_data, deterministic, fp16)
 
